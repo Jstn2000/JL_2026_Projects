@@ -92,6 +92,9 @@
 1.4 Show a preview of the image to the user
     1.4.1 Previewscreen
     1.4.2 Pixelate the image
+        1.4.2.1 Using the PIL module to pixelate the image
+            1.4.2.1.1 Downsize and then resize to get the pixelated effect
+            1.4.2.1.2 Calculate the downsize scaler by user pixel size
 1.6 Option to start painting
     1.6.1 Tabsystem to swap between image choice and image paint mode
         1.6.1.1 A main window for the general controls (Open, close)
