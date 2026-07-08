@@ -81,23 +81,23 @@ python3 main.py
 
 BUGS & NEW FEATURES
 
-- directory read bugged
+- directory read bugged ✅
 - zoom in paint option should zoom to the middle per default
 - zoom out to see full picture
-- magic pen in single mode switches between colors as you draw
-- magic pen in bucket mode fills all elements of the same number
-- add control: leftclick bucket mode, rightclick single mode
+- magic pen in single mode switches between colors as you draw ✅
+- magic pen in bucket mode fills all elements of the same number ✅
+- add control: leftclick bucket mode, rightclick single mode ✅
 - move preview screen to bottom right to not upstruckt vision on the paint screen
-- add color selected panel
+- add color selected panel ✅
 - show clearer how many are left and when you completed one color
-- add help mode (flash uncolored missing from the color)
-- extend image select to entire canvas (only uses left side at the moment)
+<!-- - add help mode (flash uncolored missing from the color) -->
+- extend image select to entire canvas (only uses left side at the moment) ✅
 - add control middle mouse button reset zoom
-- randomize png preselectrion so the user doesnthave to scroll so much to see new images
-- add save functionality for images with numbers on them
-- add save functionality to save partially completed paintings
-- add saturation option for pixelating images
-- show preview of pixelated image only in greyscale 
-- save location for images should be the project folder (or a folder in it)
+- randomize png preselectrion so the user doesnthave to scroll so much to see new images ✅
+<!-- - add save functionality for images with numbers on them -->
+<!-- - add save functionality to save partially completed paintings -->
+<!-- - add saturation option for pixelating images -->
+<!-- - show preview of pixelated image only in greyscale  -->
+<!-- - save location for images should be the project folder (or a folder in it) -->
 
-- mouse hold click mode
+- mouse hold click mode ✅
