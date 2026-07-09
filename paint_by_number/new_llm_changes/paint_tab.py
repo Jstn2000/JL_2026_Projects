@@ -101,6 +101,7 @@ class PaintTab(ttk.Frame):
 
         self.magic_pencil = tk.BooleanVar(value=False)
         self.selected_color = (0, 0, 0)
+        self.ordered_palette_colors = []  # filled in by _build_palette; used to step brush color
 
         self._display_image = None   # persistent full raster mirroring what's on screen
         self.photo_image = None      # keep PhotoImage reference alive
@@ -281,6 +282,14 @@ class PaintTab(ttk.Frame):
         # mouse-wheel zoom (Ctrl+wheel) as a bonus zoom control
         self.canvas.bind("<Control-MouseWheel>", self._on_ctrl_wheel_zoom)
 
+        # Alt+wheel steps the selected brush color to the next/previous
+        # palette swatch, instead of panning - bound the same way as
+        # Control-MouseWheel above, so Tk picks this more specific pattern
+        # over the plain pan binding below whenever Alt is actually held.
+        self.canvas.bind("<Alt-MouseWheel>", self._on_alt_wheel_select_color)
+        self.canvas.bind("<Alt-Button-4>", self._on_alt_wheel_select_color)
+        self.canvas.bind("<Alt-Button-5>", self._on_alt_wheel_select_color)
+
         # Plain scroll wheel (no Ctrl) pans vertically, like a normal
         # scrollable view - Tk picks the more specific Control-MouseWheel
         # binding above whenever Ctrl is actually held, so the two never
@@ -288,6 +297,24 @@ class PaintTab(ttk.Frame):
         self.canvas.bind("<MouseWheel>", self._on_wheel_pan)
         self.canvas.bind("<Button-4>", self._on_wheel_pan)
         self.canvas.bind("<Button-5>", self._on_wheel_pan)
+
+    def _on_alt_wheel_select_color(self, event):
+        if not self.ordered_palette_colors:
+            return "break"
+        if getattr(event, "num", None) in (4, 5):
+            delta = -1 if event.num == 4 else 1
+        else:
+            delta = -1 if event.delta > 0 else 1
+
+        try:
+            current_index = self.ordered_palette_colors.index(self.selected_color)
+        except ValueError:
+            current_index = 0
+        # Wraps around at either end, so scrolling is a continuous cycle
+        # through the palette rather than stopping at the first/last color.
+        new_index = (current_index + delta) % len(self.ordered_palette_colors)
+        self._select_color(self.ordered_palette_colors[new_index])
+        return "break"  # don't also let the plain-wheel pan binding fire
 
     # ------------------------------------------------------------------
     # Scrollable palette panel plumbing
@@ -377,6 +404,7 @@ class PaintTab(ttk.Frame):
 
         colors = get_palette_colors(self.target_image, max_colors=64)
         colors.sort(key=lambda color: sum(color))
+        self.ordered_palette_colors = colors  # used to step the brush color with Alt+scroll
 
         if colors:
             self.selected_color = colors[0]

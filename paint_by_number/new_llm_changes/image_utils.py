@@ -8,15 +8,20 @@ Helper functions for:
   numbered paint palette used in the Paint tab).
 """
  
+import hashlib
 import os
+import tempfile
 from random import shuffle
 from PIL import Image
  
 # Extensions we are willing to treat as "images"
 SUPPORTED_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tiff", ".tif")
  
-# Where converted / cached PNGs are stored (1.1.1 - "extracting to png files")
-CACHE_DIR_NAME = ".pixelpaint_png_cache"
+# Where converted / cached PNGs are stored (1.1.1 - "extracting to png files").
+# Lives in the system temp folder rather than inside the user's own image
+# directory, so nothing gets written into their photo folders at all, and
+# the OS cleans it up on its own over time.
+CACHE_DIR_NAME = "pixelpaint_png_cache"
  
  
 def scan_directory_for_images(directory):
@@ -39,6 +44,19 @@ def scan_directory_for_images(directory):
     return found
  
  
+def _cache_dir_for(directory):
+    """
+    Build a stable cache subfolder for a given source directory, inside
+    the system temp folder rather than inside the user's own image
+    folder. Namespaced by a short hash of the directory's absolute path,
+    since two different picked folders could otherwise both contain a
+    same-named file (e.g. "photo.jpg") and collide with each other.
+    """
+    normalized = os.path.normcase(os.path.abspath(directory))
+    dir_hash = hashlib.md5(normalized.encode("utf-8")).hexdigest()[:16]
+    return os.path.join(tempfile.gettempdir(), CACHE_DIR_NAME, dir_hash)
+
+
 def ensure_png(src_path, directory):
     """
     1.1.1 Lazily convert a single image to PNG using os + PIL, on demand
@@ -51,7 +69,7 @@ def ensure_png(src_path, directory):
     if ext.lower() == ".png":
         return src_path
  
-    cache_dir = os.path.join(directory, CACHE_DIR_NAME)
+    cache_dir = _cache_dir_for(directory)
     os.makedirs(cache_dir, exist_ok=True)
     png_path = os.path.join(cache_dir, name_no_ext + ".png")
  

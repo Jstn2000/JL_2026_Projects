@@ -27,7 +27,9 @@ python3 main.py
 1. **Select Image** tab
    - `File > Open Directory...` (or the toolbar button) picks a folder of images.
    - All supported images (`png, jpg, jpeg, bmp, gif, webp, tiff`) are found and,
-     if needed, converted to PNG into a small `.pixelpaint_png_cache` folder.
+     if needed, converted to PNG on demand. The converted copies are cached in
+     your system's temp folder, not in the picked folder itself - nothing gets
+     written next to your original photos.
    - Click a thumbnail, drag the slider, or scroll your mouse wheel over the
      gallery to browse and pick an image.
 
