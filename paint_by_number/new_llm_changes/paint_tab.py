@@ -36,18 +36,31 @@ instead of rebuilding/reassigning the whole image. A full rebuild only
 happens on load, zoom change, or "Clear painting".
 """
 
+import io
+import json
+import zipfile
+
 import tkinter as tk
 from tkinter import ttk
 
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
-from image_utils import get_palette_colors, grid_to_full_size
+from image_utils import get_palette_colors, grid_to_full_size, render_numbered_template
 from theme import BG_DARK, BG_PANEL, FG_MUTED
 
 SWATCH_SIZE = 30        # diameter of each round palette swatch
 BIG_SWATCH_SIZE = 56    # diameter of the "currently selected color" circle
 MIN_ZOOM = 1.0   # 1 screen pixel per cell - the lowest this renderer can go
 MAX_ZOOM = 40.0
+
+# Brush sizes available for single-pixel painting (right-click / magic
+# pencil single mode). Bucket fill already covers a whole region on its
+# own, so brush size only applies to the single-pixel tool.
+BRUSH_SIZES = (1, 2, 3, 4)
+
+# Bump this if the on-disk project format ever changes shape, so future
+# versions of the app can decide whether/how to handle older save files.
+PROJECT_FORMAT_VERSION = 1
 
 # The palette panel is capped to this height and becomes scrollable beyond
 # it, so a large color count (many rows of swatches) can never push the
@@ -100,6 +113,7 @@ class PaintTab(ttk.Frame):
         self._zoom_after_id = None
 
         self.magic_pencil = tk.BooleanVar(value=False)
+        self.brush_size = tk.IntVar(value=1)
         self.selected_color = (0, 0, 0)
         self.ordered_palette_colors = []  # filled in by _build_palette; used to step brush color
 
@@ -195,10 +209,23 @@ class PaintTab(ttk.Frame):
 
         ttk.Label(
             side,
-            text="Left-click: fill (bucket)\nRight-click: single pixel",
+            text="Left-click: fill (bucket) - always fills the whole\nconnected region, brush size doesn't apply\nRight-click: single pixel - brush size applies here",
             foreground=FG_MUTED,
             justify=tk.LEFT,
         ).pack(anchor="w", pady=(6, 0))
+
+        # Brush size only affects the single-pixel tool (right-click) -
+        # bucket fill already covers a whole region on its own, so a
+        # brush size there wouldn't mean anything extra.
+        ttk.Label(side, text="Brush size (right-click only):", foreground=FG_MUTED).pack(
+            anchor="w", pady=(6, 0)
+        )
+        brush_row = ttk.Frame(side)
+        brush_row.pack(anchor="w", pady=(2, 0))
+        for size in BRUSH_SIZES:
+            ttk.Radiobutton(
+                brush_row, text=f"{size}x{size}", variable=self.brush_size, value=size
+            ).pack(side=tk.LEFT, padx=(0, 6))
 
         ttk.Separator(side, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
 
@@ -891,26 +918,56 @@ class PaintTab(ttk.Frame):
             changed = self._paint_single(gx, gy)
 
         if changed:
-            # Every cell in `changed` shares the same target color (each of
-            # the paint modes above only ever paints cells wanting one
-            # specific color per call), so a single decrement covers them all.
-            painted_color = self.target_pixels[changed[0][0], changed[0][1]]
-            self.color_remaining[painted_color] = self.color_remaining.get(painted_color, 0) - len(changed)
+            # Most paint modes only ever touch cells wanting one specific
+            # color per call, but a multi-cell brush in magic-pencil
+            # single mode can span several different target colors at
+            # once - so tally remaining-counts per color rather than
+            # assuming they're all the same.
+            color_counts = {}
+            for (cx, cy) in changed:
+                c = self.target_pixels[cx, cy]
+                color_counts[c] = color_counts.get(c, 0) + 1
+            for c, count in color_counts.items():
+                self.color_remaining[c] = self.color_remaining.get(c, 0) - count
             self._update_cells(changed)
             self._update_progress()
-            self._update_palette_progress([painted_color])
+            self._update_palette_progress(list(color_counts.keys()))
         elif not self.magic_pencil.get() and self.target_pixels[gx, gy] != self.selected_color and (gx, gy) not in self.painted:
             number = self.color_to_number.get(self.target_pixels[gx, gy], "?")
             self.status_label.config(text=f"Pixel: {gx}, {gy}\nThat's color #{number}, not your brush")
 
+    def _brush_cells(self, cx, cy):
+        """
+        The set of in-bounds grid cells covered by the current brush size,
+        centered on (cx, cy). Size 1 is just the clicked cell itself; for
+        even sizes the extra row/column lands to the bottom-right, same as
+        most paint programs' brush cursors.
+        """
+        size = self.brush_size.get()
+        if size <= 1:
+            return [(cx, cy)]
+        half = size // 2
+        start_x = cx - half
+        start_y = cy - half
+        cells = []
+        for dy in range(size):
+            for dx in range(size):
+                gx, gy = start_x + dx, start_y + dy
+                if 0 <= gx < self.grid_w and 0 <= gy < self.grid_h:
+                    cells.append((gx, gy))
+        return cells
+
     def _paint_single(self, x, y):
-        if self.target_pixels[x, y] != self.selected_color:
-            return []  # wrong color for this cell - painting is disabled
-        if (x, y) in self.painted:
-            return []  # already correctly painted - nothing changed
-        self.canvas_pixels[x, y] = self.selected_color
-        self.painted.add((x, y))
-        return [(x, y)]
+        changed = []
+        for (gx, gy) in self._brush_cells(x, y):
+            if self.target_pixels[gx, gy] != self.selected_color:
+                continue  # wrong color for this cell - painting is disabled
+            if (gx, gy) in self.painted:
+                continue  # already correctly painted - nothing changed
+            self.canvas_pixels[gx, gy] = self.selected_color
+            self.painted.add((gx, gy))
+            changed.append((gx, gy))
+        return changed
 
     # 2.1.1.3 Fill mode: flood-fill every contiguous cell that wants the
     # same number as the one clicked, painting them all with the brush color.
@@ -946,12 +1003,15 @@ class PaintTab(ttk.Frame):
     # cell under the cursor with ITS OWN correct color as you click/drag,
     # no need to have that color pre-selected.
     def _magic_pencil_single(self, x, y):
-        if (x, y) in self.painted:
-            return []
-        target_color = self.target_pixels[x, y]
-        self.canvas_pixels[x, y] = target_color
-        self.painted.add((x, y))
-        return [(x, y)]
+        changed = []
+        for (gx, gy) in self._brush_cells(x, y):
+            if (gx, gy) in self.painted:
+                continue
+            target_color = self.target_pixels[gx, gy]
+            self.canvas_pixels[gx, gy] = target_color
+            self.painted.add((gx, gy))
+            changed.append((gx, gy))
+        return changed
 
     # 2.1.1.4 Magic pencil, fill mode: paints every cell (anywhere in the
     # image) that shares the clicked cell's number with ITS OWN correct
@@ -982,3 +1042,115 @@ class PaintTab(ttk.Frame):
             self.grid_w * 10, self.grid_h * 10
         )
         return grid_to_full_size(self.canvas_image, target_size)
+
+    def get_numbered_template(self, cell_size=40):
+        """
+        A full-resolution, printable rendering of the blank numbered
+        template (not the user's progress) - the thing you'd hand to a
+        friend, along with the palette, so they can paint it by hand.
+        """
+        if self.target_image is None:
+            return None
+        return render_numbered_template(self.target_image, self.color_to_number, cell_size=cell_size)
+
+    # ------------------------------------------------------------------
+    # Save / load partially completed paintings
+    # ------------------------------------------------------------------
+    def has_painting(self):
+        return self.target_image is not None
+
+    def save_project(self, path):
+        """
+        Save the current in-progress painting to a self-contained project
+        file (a small zip under the hood) so it can be reopened later, or
+        handed to someone else to continue on their own machine.
+
+        Stored inside:
+            meta.json   - grid size + a few UI preferences (brush size etc.)
+            target.png  - the "answer key" grid (palette colors + numbers)
+            canvas.png  - the user's painted result so far
+            mask.png    - which cells are actually painted (white=painted),
+                          since a painted cell's color could coincidentally
+                          match the blank-white background otherwise.
+        """
+        if self.target_image is None:
+            raise RuntimeError("There is no painting in progress to save yet.")
+
+        mask = Image.new("L", (self.grid_w, self.grid_h), 0)
+        mask_pixels = mask.load()
+        for (gx, gy) in self.painted:
+            mask_pixels[gx, gy] = 255
+
+        meta = {
+            "version": PROJECT_FORMAT_VERSION,
+            "grid_w": self.grid_w,
+            "grid_h": self.grid_h,
+            "brush_size": self.brush_size.get(),
+            "magic_pencil": bool(self.magic_pencil.get()),
+            "selected_color": list(self.selected_color) if self.selected_color else None,
+            "original_size": list(self.state_obj.original_image.size)
+            if self.state_obj.original_image is not None else None,
+        }
+
+        target_buf = io.BytesIO()
+        self.target_image.save(target_buf, "PNG")
+        canvas_buf = io.BytesIO()
+        self.canvas_image.save(canvas_buf, "PNG")
+        mask_buf = io.BytesIO()
+        mask.save(mask_buf, "PNG")
+
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("meta.json", json.dumps(meta))
+            zf.writestr("target.png", target_buf.getvalue())
+            zf.writestr("canvas.png", canvas_buf.getvalue())
+            zf.writestr("mask.png", mask_buf.getvalue())
+
+    def load_project(self, path):
+        """Reopen a project file saved by save_project() above."""
+        with zipfile.ZipFile(path, "r") as zf:
+            meta = json.loads(zf.read("meta.json").decode("utf-8"))
+            target = Image.open(io.BytesIO(zf.read("target.png"))).convert("RGB")
+            canvas = Image.open(io.BytesIO(zf.read("canvas.png"))).convert("RGB")
+            mask = Image.open(io.BytesIO(zf.read("mask.png"))).convert("L")
+
+        self.target_image = target
+        self.target_pixels = self.target_image.load()
+        self.grid_w, self.grid_h = target.size
+
+        self.canvas_image = canvas
+        self.canvas_pixels = self.canvas_image.load()
+
+        mask_pixels = mask.load()
+        self.painted = set()
+        for gy in range(self.grid_h):
+            for gx in range(self.grid_w):
+                if mask_pixels[gx, gy] >= 128:
+                    self.painted.add((gx, gy))
+
+        # Keep the shared app state's grid image in sync too, so other
+        # tabs / actions (like "Save Image") that read from it still work
+        # correctly against the reloaded project.
+        self.state_obj.pixel_grid_image = self.target_image
+
+        self._build_color_positions()
+        self.color_remaining = {
+            color: sum(1 for pos in positions if pos not in self.painted)
+            for color, positions in self.color_to_positions.items()
+        }
+
+        if meta.get("brush_size") in BRUSH_SIZES:
+            self.brush_size.set(meta["brush_size"])
+        self.magic_pencil.set(bool(meta.get("magic_pencil", False)))
+
+        self._build_palette()
+        saved_color = meta.get("selected_color")
+        if saved_color is not None:
+            saved_color_t = tuple(saved_color)
+            if saved_color_t in self.color_to_number:
+                self.selected_color = saved_color_t
+                self._update_swatch_highlight()
+                self._update_selected_indicator()
+
+        self._rebuild_full()
+        self._update_progress()
+        self._update_palette_progress()

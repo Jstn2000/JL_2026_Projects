@@ -15,7 +15,7 @@ Main application window.
 
 import os
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 
 from select_tab import SelectTab
 from pixelate_tab import PixelateTab
@@ -91,6 +91,13 @@ class PixelPaintApp(tk.Tk):
         image_menu.add_command(label="Pixelate", command=self.pixelate_current_image)     # 1.3.1.3
         menubar.add_cascade(label="Image", menu=image_menu)
 
+        project_menu = tk.Menu(menubar, tearoff=0, **menu_colors)
+        project_menu.add_command(label="Save Progress...", command=self.save_progress)
+        project_menu.add_command(label="Load Progress...", command=self.load_progress)
+        project_menu.add_separator()
+        project_menu.add_command(label="Export Numbered Template...", command=self.export_numbered_template)
+        menubar.add_cascade(label="Project", menu=project_menu)
+
         self.config(menu=menubar)
 
     # ------------------------------------------------------------------
@@ -152,6 +159,8 @@ class PixelPaintApp(tk.Tk):
 
         ttk.Button(bar, text="Pixelate", command=self.pixelate_current_image).pack(side=tk.LEFT, padx=(16, 4))
         ttk.Button(bar, text="Save Image", command=self.save_image).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bar, text="Save Progress", command=self.save_progress).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bar, text="Load Progress", command=self.load_progress).pack(side=tk.LEFT, padx=4)
 
         self.dir_label = ttk.Label(bar, text="No directory selected", foreground=FG_MUTED)
         self.dir_label.pack(side=tk.RIGHT, padx=8)
@@ -268,6 +277,65 @@ class PixelPaintApp(tk.Tk):
             return
         image.save(path, "PNG")
         messagebox.showinfo("PixelPaint", f"Saved to:\n{path}")
+
+    def save_progress(self):
+        if not self.paint_tab.has_painting():
+            messagebox.showinfo("PixelPaint", "There is no painting in progress to save yet.")
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".ppzip",
+            filetypes=[("PixelPaint project", "*.ppzip")],
+            title="Save progress as...",
+        )
+        if not path:
+            return
+        try:
+            self.paint_tab.save_project(path)
+        except Exception as e:
+            messagebox.showerror("PixelPaint", f"Could not save progress:\n{e}")
+            return
+        messagebox.showinfo("PixelPaint", f"Progress saved to:\n{path}")
+
+    def load_progress(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("PixelPaint project", "*.ppzip"), ("All files", "*.*")],
+            title="Load progress...",
+        )
+        if not path:
+            return
+        try:
+            self.paint_tab.load_project(path)
+        except Exception as e:
+            messagebox.showerror("PixelPaint", f"Could not load progress:\n{e}")
+            return
+        self.notebook.select(self.paint_tab)
+
+    def export_numbered_template(self):
+        if not self.paint_tab.has_painting():
+            messagebox.showinfo("PixelPaint", "Please pixelate an image first (tab 2) before exporting a template.")
+            return
+        cell_size = simpledialog.askinteger(
+            "Export Numbered Template",
+            "Cell size in pixels (bigger = larger, more printable file):",
+            initialvalue=40,
+            minvalue=10,
+            maxvalue=200,
+            parent=self,
+        )
+        if not cell_size:
+            return
+        image = self.paint_tab.get_numbered_template(cell_size=cell_size)
+        if image is None:
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".png",
+            filetypes=[("PNG image", "*.png")],
+            title="Export numbered template as...",
+        )
+        if not path:
+            return
+        image.save(path, "PNG")
+        messagebox.showinfo("PixelPaint", f"Saved numbered template to:\n{path}")
 
     def close_app(self):
         self.destroy()

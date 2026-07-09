@@ -12,7 +12,7 @@ import hashlib
 import os
 import tempfile
 from random import shuffle
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
  
 # Extensions we are willing to treat as "images"
 SUPPORTED_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tiff", ".tif")
@@ -169,3 +169,41 @@ def get_palette_colors(image, max_colors=256):
     colors.sort(key=lambda c: c[0], reverse=True)
     palette = [color for _, color in colors]
     return palette[:max_colors]
+
+
+def render_numbered_template(target_image, color_to_number, cell_size=40,
+                              grid_color=(205, 205, 205), number_color=(90, 90, 90)):
+    """
+    Render a full-resolution, printable "paint by numbers" template: every
+    cell of the small `target_image` grid is blown up to `cell_size` x
+    `cell_size` pixels, drawn blank-white with its palette number and a thin
+    grid border - i.e. exactly what the Paint tab shows for an *unpainted*
+    cell, but rasterized at full size instead of on-screen at zoom level.
+
+    This is what you'd hand to a friend (printed or as an image) alongside
+    the palette, so they can paint the picture by hand.
+    """
+    width, height = target_image.size
+    pixels = target_image.load()
+
+    out = Image.new("RGB", (width * cell_size, height * cell_size), (255, 255, 255))
+    draw = ImageDraw.Draw(out)
+    font = ImageFont.load_default(size=max(8, int(cell_size * 0.5)))
+
+    for gy in range(height):
+        for gx in range(width):
+            color = pixels[gx, gy]
+            number = color_to_number.get(color, "?")
+            x0, y0 = gx * cell_size, gy * cell_size
+            x1, y1 = x0 + cell_size - 1, y0 + cell_size - 1
+
+            draw.rectangle((x0, y0, x1, y1), outline=grid_color, width=1)
+
+            text = str(number)
+            bbox = draw.textbbox((0, 0), text, font=font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            tx = x0 + (cell_size - tw) / 2 - bbox[0]
+            ty = y0 + (cell_size - th) / 2 - bbox[1]
+            draw.text((tx, ty), text, fill=number_color, font=font)
+
+    return out

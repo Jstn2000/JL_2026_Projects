@@ -49,10 +49,15 @@ python3 main.py
    - **Left-click paints with Fill (bucket)**, **right-click paints Single
      pixel** - no mode buttons to toggle, the mouse button you use is the
      mode.
+   - **Brush size** (1x1 / 2x2 / 3x3 / 4x4) controls how many cells the
+     single-pixel tool (right-click) paints at once, centered on the
+     cursor. It only applies to single-pixel painting - bucket fill
+     already covers a whole region on its own.
    - Enable **Magic pencil** to auto-paint whatever you click/drag over
      with *its own correct color*, without needing that color
-     pre-selected: right-click auto-colors just that cell, left-click
-     auto-colors *every* cell sharing that number, anywhere in the image.
+     pre-selected: right-click auto-colors just that cell (or the whole
+     brush footprint), left-click auto-colors *every* cell sharing that
+     number, anywhere in the image.
    - Once a cell is painted, its number/highlight disappears and it shows
      the real color. You can only paint a cell with its correct color -
      picking the wrong color and clicking just does nothing, so mistakes
@@ -70,6 +75,18 @@ python3 main.py
 
 4. `File > Save Image...` (or the toolbar button) exports your painted
    result as a PNG at the original photo's resolution.
+
+5. `Project` menu (also mirrored as toolbar buttons):
+   - **Save Progress...** saves your partially-completed painting to a
+     `.ppzip` project file - your progress, the numbered "answer key",
+     and your brush/magic-pencil settings all in one file.
+   - **Load Progress...** reopens a `.ppzip` file later, or lets someone
+     else continue your painting on their own machine.
+   - **Export Numbered Template...** saves a full-resolution, printable
+     PNG of the blank numbered template (not your progress) - the thing
+     you'd print out or send to a friend, alongside the palette, so they
+     can paint it by hand. You choose how large each numbered cell should
+     be when prompted.
 
 ## Project layout
 
@@ -96,8 +113,9 @@ BUGS & NEW FEATURES
 - extend image select to entire canvas (only uses left side at the moment) ✅
 - add control middle mouse button reset zoom
 - randomize png preselectrion so the user doesnthave to scroll so much to see new images ✅
-<!-- - add save functionality for images with numbers on them -->
-<!-- - add save functionality to save partially completed paintings -->
+- add save functionality for images with numbers on them ✅
+- add save functionality to save partially completed paintings ✅
+- add adjustable brush size (2x2, 3x3, 4x4) for single-pixel painting ✅
 <!-- - add saturation option for pixelating images -->
 <!-- - show preview of pixelated image only in greyscale  -->
 <!-- - save location for images should be the project folder (or a folder in it) -->
