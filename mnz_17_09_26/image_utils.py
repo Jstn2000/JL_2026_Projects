@@ -6,13 +6,17 @@ Helper functions for:
   1.4.2 Pixelating an image (downsize -> upsize with nearest-neighbour resampling)
   Color quantization (used both for the pixel-art look and to build the
   numbered paint palette used in the Paint tab).
+  Advanced Pixelate: brightness/contrast/saturation/grayscale/invert
+  adjustments and true black & white thresholding, applied before the
+  downsize + quantize steps above (see AdjustmentOptions).
 """
  
 import hashlib
 import os
 import tempfile
+from dataclasses import dataclass
 from random import shuffle
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageOps
  
 # Extensions we are willing to treat as "images"
 SUPPORTED_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tiff", ".tif")
@@ -22,6 +26,66 @@ SUPPORTED_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tiff
 # directory, so nothing gets written into their photo folders at all, and
 # the OS cleans it up on its own over time.
 CACHE_DIR_NAME = "pixelpaint_png_cache"
+
+
+@dataclass
+class AdjustmentOptions:
+    """
+    Settings for the Advanced Pixelate dialog. All defaults are no-ops, so
+    passing a fresh AdjustmentOptions() (or None) through the pixelate
+    functions below reproduces the plain, pre-Advanced-Pixelate behavior.
+    """
+    brightness: float = 1.0    # PIL ImageEnhance factor: 1.0 = unchanged
+    contrast: float = 1.0
+    saturation: float = 1.0    # 0.0 = grayscale, 1.0 = unchanged, >1.0 = more saturated
+    grayscale: bool = False
+    invert: bool = False
+    black_and_white: bool = False   # hard black/white threshold - see threshold_black_and_white
+    bw_threshold: int = 128         # 0-255; pixels at/above this become white
+    dither: bool = True             # Floyd-Steinberg dithering when reducing to `num_colors`
+
+
+def apply_color_adjustments(image, adjustments):
+    """
+    Apply brightness/contrast/saturation/grayscale/invert, in that fixed
+    order, ahead of the downsize + quantize steps. Black & white
+    thresholding is handled separately by threshold_black_and_white()
+    since it replaces color quantization entirely rather than adjusting
+    the colors that feed into it.
+    """
+    rgb = image.convert("RGB")
+
+    if adjustments.grayscale or adjustments.black_and_white:
+        rgb = ImageOps.grayscale(rgb).convert("RGB")
+
+    if adjustments.brightness != 1.0:
+        rgb = ImageEnhance.Brightness(rgb).enhance(adjustments.brightness)
+
+    if adjustments.contrast != 1.0:
+        rgb = ImageEnhance.Contrast(rgb).enhance(adjustments.contrast)
+
+    # Saturation is moot once the image is already grayscale/B&W.
+    if adjustments.saturation != 1.0 and not (adjustments.grayscale or adjustments.black_and_white):
+        rgb = ImageEnhance.Color(rgb).enhance(adjustments.saturation)
+
+    if adjustments.invert:
+        rgb = ImageOps.invert(rgb)
+
+    return rgb
+
+
+def threshold_black_and_white(image, threshold=128):
+    """
+    Reduce `image` to pure black/white with a hard brightness cutoff - a
+    genuinely 2-color (0,0,0)/(255,255,255) result, which is what testers
+    asking for "only black and white" actually wanted, as distinct from
+    just setting Colors=2 (quantization there could land on two arbitrary
+    shades rather than true black and white).
+    """
+    gray = image.convert("L")
+    bw = gray.point(lambda p: 255 if p >= threshold else 0)
+    return bw.convert("RGB")
+
  
  
 def scan_directory_for_images(directory):
@@ -98,7 +162,7 @@ def make_thumbnail(image_path, size=(140, 140)):
     return img
  
  
-def quantize_colors(image, num_colors):
+def quantize_colors(image, num_colors, dither=True):
     """
     Reduce an image to `num_colors` distinct colors. Used both to give the
     pixel-art a limited palette and to build the numbered palette in the
@@ -107,20 +171,31 @@ def quantize_colors(image, num_colors):
     """
     num_colors = max(1, min(256, int(num_colors)))
     rgb = image.convert("RGB")
-    quantized = rgb.quantize(colors=num_colors, method=Image.MEDIANCUT)
+    dither_mode = Image.FLOYDSTEINBERG if dither else Image.NONE
+    quantized = rgb.quantize(colors=num_colors, method=Image.MEDIANCUT, dither=dither_mode)
     return quantized.convert("RGB")
  
  
-def compute_pixel_grid(image, pixel_size, num_colors=None):
+def compute_pixel_grid(image, pixel_size, num_colors=None, adjustments=None):
     """
     1.4.2.1.1 / 1.4.2.1.2 Downsize the image so every block of `pixel_size`
     source pixels becomes exactly one pixel in the returned "grid" image.
     This small grid IS the pixel-art / paint-by-numbers canvas: each pixel
-    in it corresponds 1:1 with one paintable block. Optionally quantized
-    down to `num_colors` distinct colors.
+    in it corresponds 1:1 with one paintable block.
+
+    `adjustments` (an AdjustmentOptions, optional) applies the Advanced
+    Pixelate brightness/contrast/saturation/grayscale/invert adjustments
+    to the source before downsizing, then either:
+      - hard black & white thresholding (if adjustments.black_and_white),
+        which replaces quantization entirely, or
+      - the normal quantize down to `num_colors` distinct colors.
     """
     pixel_size = max(1, int(pixel_size))
     rgb = image.convert("RGB")
+
+    if adjustments is not None:
+        rgb = apply_color_adjustments(rgb, adjustments)
+
     width, height = rgb.size
  
     small_w = max(1, width // pixel_size)
@@ -129,13 +204,16 @@ def compute_pixel_grid(image, pixel_size, num_colors=None):
     small = rgb.resize((small_w, small_h), resample=Image.BILINEAR)
     # small = rgb.resize((small_w, small_h), resample=Image.Resampling.NEAREST)
  
-    if num_colors:
-        small = quantize_colors(small, num_colors)
+    if adjustments is not None and adjustments.black_and_white:
+        small = threshold_black_and_white(small, adjustments.bw_threshold)
+    elif num_colors:
+        dither = adjustments.dither if adjustments is not None else True
+        small = quantize_colors(small, num_colors, dither=dither)
  
     return small
  
  
-def pixelate_image(image, pixel_size, num_colors=None):
+def pixelate_image(image, pixel_size, num_colors=None, adjustments=None):
     """
     1.4.2 Pixelate the image using PIL.
         1.4.2.1.1 Downsize and then resize back up (nearest neighbour) for
@@ -146,7 +224,7 @@ def pixelate_image(image, pixel_size, num_colors=None):
     """
     rgb = image.convert("RGB")
     width, height = rgb.size
-    small = compute_pixel_grid(rgb, pixel_size, num_colors)
+    small = compute_pixel_grid(rgb, pixel_size, num_colors, adjustments)
     pixelated = small.resize((width, height), resample=Image.NEAREST)
     return pixelated
  

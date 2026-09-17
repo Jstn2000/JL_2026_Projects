@@ -59,11 +59,11 @@ class PixelateTab(ttk.Frame):
         self.original_canvas.configure(image=self._original_photo)
         self.pixel_canvas.configure(image="")
 
-    def pixelate(self, pixel_size, num_colors):
+    def pixelate(self, pixel_size, num_colors, adjustments=None):
         image = self.state_obj.original_image
         if image is None:
             return
-        grid = compute_pixel_grid(image, pixel_size, num_colors)
+        grid = compute_pixel_grid(image, pixel_size, num_colors, adjustments)
         result = grid.resize(image.size, resample=0)  # 0 = NEAREST
         self.state_obj.pixel_grid_image = grid
         self.state_obj.pixelated_image = result

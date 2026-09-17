@@ -24,6 +24,8 @@ from theme import apply_dark_theme, tk_menu_colors, FG_MUTED
 from keybindings import KeyBindings
 from keybindings_dialog import open_keybindings_dialog
 from help_dialog import open_help_dialog
+from image_utils import AdjustmentOptions
+from advanced_pixelate_dialog import open_advanced_pixelate_dialog
 
 # Bounds for the "Pixel size" slider.
 MIN_PIXEL_SIZE = 1
@@ -58,6 +60,20 @@ class AppState:
 
         self.pixel_size = tk.IntVar(value=4)
         self.num_colors = tk.IntVar(value=16)
+
+        # Advanced Pixelate adjustments - edited via the Advanced Pixelate
+        # dialog, but live here (rather than owned by that dialog) so the
+        # plain toolbar "Pixelate" button also applies whatever's currently
+        # set, without needing the dialog open every time. Defaults match
+        # image_utils.AdjustmentOptions' own defaults (all no-ops).
+        self.brightness = tk.DoubleVar(value=1.0)
+        self.contrast = tk.DoubleVar(value=1.0)
+        self.saturation = tk.DoubleVar(value=1.0)
+        self.grayscale = tk.BooleanVar(value=False)
+        self.invert = tk.BooleanVar(value=False)
+        self.black_and_white = tk.BooleanVar(value=False)
+        self.bw_threshold = tk.IntVar(value=128)
+        self.dither = tk.BooleanVar(value=True)
 
 
 class PixelPaintApp(tk.Tk):
@@ -229,6 +245,9 @@ class PixelPaintApp(tk.Tk):
         self.color_slider.set(self.state_obj.num_colors.get())
 
         ttk.Button(bar, text="Pixelate", command=self.pixelate_current_image).pack(side=tk.LEFT, padx=(16, 4))
+        ttk.Button(bar, text="Advanced Pixelate...", command=self.open_advanced_pixelate_dialog).pack(
+            side=tk.LEFT, padx=4
+        )
         ttk.Button(bar, text="Save Image", command=self.save_image).pack(side=tk.LEFT, padx=4)
         ttk.Button(bar, text="Save Progress", command=self.save_progress).pack(side=tk.LEFT, padx=4)
         ttk.Button(bar, text="Load Progress", command=self.load_progress).pack(side=tk.LEFT, padx=4)
@@ -439,9 +458,27 @@ class PixelPaintApp(tk.Tk):
             messagebox.showerror("PixelPaint", "Pixel size and colors must be positive whole numbers.")
             return
 
-        self.pixelate_tab.pixelate(pixel_size, num_colors)
+        adjustments = self._get_adjustment_options()
+        self.pixelate_tab.pixelate(pixel_size, num_colors, adjustments)
         self.paint_tab.load_pixelated_image()
         self.notebook.select(self.pixelate_tab)
+
+    def _get_adjustment_options(self):
+        """Snapshot the Advanced Pixelate settings (see AppState) into a
+        plain AdjustmentOptions for image_utils' pixelate functions."""
+        return AdjustmentOptions(
+            brightness=self.state_obj.brightness.get(),
+            contrast=self.state_obj.contrast.get(),
+            saturation=self.state_obj.saturation.get(),
+            grayscale=self.state_obj.grayscale.get(),
+            invert=self.state_obj.invert.get(),
+            black_and_white=self.state_obj.black_and_white.get(),
+            bw_threshold=self.state_obj.bw_threshold.get(),
+            dither=self.state_obj.dither.get(),
+        )
+
+    def open_advanced_pixelate_dialog(self):
+        open_advanced_pixelate_dialog(self, self.state_obj, on_apply=self.pixelate_current_image)
 
     def save_image(self):
         image = self.paint_tab.get_full_size_image() or self.state_obj.pixelated_image

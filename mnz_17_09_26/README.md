@@ -49,6 +49,13 @@ python3 main.py
      exact number straight into the field next to it.
    - Click **Pixelate** (toolbar button or `Image > Pixelate`) to see a
      side-by-side original vs. pixelated preview.
+   - **Advanced Pixelate...** (toolbar button, next to Pixelate) opens extra
+     color controls with a live preview: brightness, contrast, saturation,
+     grayscale, a genuine black & white mode (with an adjustable threshold,
+     rather than just setting Colors=2), invert, and whether color
+     reduction uses dithering. These apply the next time anything
+     pixelates - the dialog also has its own "Apply & Pixelate" shortcut,
+     and a "Reset to Defaults" button.
 
 3. **Paint** tab
    - The canvas starts **completely white**, with a small number in every
@@ -141,6 +148,7 @@ app, and any line you delete just falls back to its default).
 - `keybindings.py` – default shortcuts + the `~/.pixelpaint/keybindings.cfg` load/save
 - `keybindings_dialog.py` – in-app "Keyboard Shortcuts..." customization dialog
 - `help_dialog.py` – the "How to Use PixelPaint" reference window (Help button)
+- `advanced_pixelate_dialog.py` – "Advanced Pixelate..." color-adjustment dialog
 
 
 BUGS & NEW FEATURES
@@ -161,8 +169,8 @@ BUGS & NEW FEATURES
 - add save functionality for images with numbers on them ✅
 - add save functionality to save partially completed paintings ✅
 - add adjustable brush size (2x2, 3x3, 4x4) for single-pixel painting ✅
-<!-- - add saturation option for pixelating images -->
-<!-- - show preview of pixelated image only in greyscale  -->
+- add saturation option for pixelating images ✅
+- show preview of pixelated image only in greyscale ✅
 <!-- - save location for images should be the project folder (or a folder in it) -->
 
 - mouse hold click mode ✅
@@ -177,3 +185,5 @@ BUGS & NEW FEATURES
 - add space+drag panning (like MS Paint) ✅
 - make pixel size / colors editable as a typed number, not just a slider ✅
 - fix: ruler stopped updating while click-dragging to paint ✅
+- fix: typing 1/2/3 into the pixel-size/colors fields switched tabs instead ✅
+- add an "Advanced Pixelate" dialog: brightness/contrast/saturation/grayscale/black & white/invert/dithering, with a live preview ✅
